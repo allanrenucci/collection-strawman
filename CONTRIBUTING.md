@@ -12,7 +12,7 @@ You need the following:
 - JDK 8
 - SBT
 
-And be sure to be familiar with the [design](DESIGN.md).
+And be sure to be familiar with the [design](documentation/DESIGN.md).
 
 ### Workflow
 
