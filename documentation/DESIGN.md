@@ -14,7 +14,7 @@ Then we have `Seq[A]`, `Set[A]` and `Map[K, V]`, which are similar to the curren
 collections.
 
 Last, `View[A]` is a new collection type whose transformation operations are lazy (their
-result is not immediately evaluated). Since this type is new, it deserves some examples
+result is not immediately evaluated). Since this type is new it deserves some examples
 of use:
 
 ~~~ scala
@@ -61,7 +61,7 @@ of these traits is suffixed by `Ops`, by convention. Here is what the `IterableO
 definition looks like:
 
 ~~~ scala
-trait IterableOps[A, CC[X], C] {
+trait IterableOps[A, CC[_], C] {
 
   def take(n: Int): C = …
   
@@ -189,7 +189,7 @@ You might also want to have a look at a related blog post:
 
 Most of the collection operations have a default implementation. This is
 convenient because it makes it easier to extend the hierarchy with a
-new collection type, without having to implement a lot of methods.
+new collection type without having to implement a lot of methods.
 
 For operations that return another collection (e.g. `map` or `take`),
 two approaches are possible:
@@ -209,7 +209,7 @@ approach, on the other hand, is lazy collection friendly: we start by creating
 a view of the result and then convert this view to the target collection.
 If the target collection is a strict collection, then we just evaluate the
 view. If the target collection is a lazy collection, then the conversion operation
-does not evaluate the elements of the view and everything works as expected.
+does not evaluate the elements of the view (so that laziness is preserved).
 
 In other words, the second approach makes it possible to define default
 implementations that work for both strict and lazy collections.
@@ -247,3 +247,67 @@ These methods are then implemented by concrete collection types.
 collection having the same type of elements `A`, and `fromIterable`
 defines how to build a collection `CC[E]` from a collection having a
 different type of elements `E`.
+
+### Four Kinds of `fromIterable`
+
+As previously explained, we have four kinds of collections and
+each collection kind provides its own conversion methods:
+
+~~~ scala
+trait SortedSetOps[A, CC[_], C] {
+
+  protected[this] def sortedFromIterable[B : Ordering](it: Iterable[B]): CC[B]
+
+}
+
+trait MapOps[K, V, CC[_, _], C] {
+
+  protected[this] def mapFromIterable[K2, V2](it: Iterable[(K2, V2)]): CC[K2, V2]
+
+}
+
+trait SortedMapOps[K, V, CC[_, _], C] {
+
+  protected[this] def sortedMapFromIterable[K2 : Ordering, V2](it: collection.Iterable[(K2, V2)]): CC[K2, V2]
+
+}
+~~~
+
+### Optimizations for Strict Collections
+
+In some cases the view-based implementation can be significantly less efficient
+for strict collections than a builder-based implementation. A good example is
+the `partition` operation:
+
+~~~ scala
+def partition(p: A => Boolean): (C, C)
+~~~
+
+This method returns two collections, one with elements that satisfy the predicate
+`p` and one with elements that don’t.
+
+A view-based implementation of this operation has no other choice than performing
+two traversals of the receiver collection. On the other hand, a builder-based
+solution would just require one traversal in which it is possible to build the
+two resulting collections.
+
+In order to get bad performance on strict collections, we introduced traits that
+override operation implementations using a builder-based solution. The names of
+these traits are (by convention) prefixed with `StrictOptimized`:
+
+~~~ scala
+trait StrictOptimizedIterableOps[A, CC[_], C]
+  extends IterableOps[A, CC, C] {
+
+  override def partition(p: A => Boolean): (C, C) = {
+    val l, r = newSpecificBuilder()
+    toIterable.iterator().foreach(x => (if (p(x)) l else r) += x)
+    (l.result(), r.result())
+  }
+  
+}
+~~~
+
+Note that the `newSpecificBuilder` method, used to get a `Builder[A, C]`, is
+defined in `IterableOps` but it’s usage is not recommended: default operation
+implementations should always preserve laziness (by being view-based).
